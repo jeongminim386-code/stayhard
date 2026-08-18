@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Elite Jogger - Legend Fixed</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+    <style>
+        body { margin: 0; background-color: #000; overflow: hidden; display: flex; flex-direction: column; align-items: center; height: 100vh; font-family: -apple-system, sans-serif; user-select: none; -webkit-user-select: none; }
+        #login-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: black; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
+        #game-container { display: none; width: 100%; height: 100%; position: relative; }
+        #stat-group { position: absolute; top: 32px; left: 30px; z-index: 30; display: flex; flex-direction: column; gap: 8px; }
+        #stamina-ui { width: 160px; height: 10px; border: 1.5px solid rgba(255,255,255,0.8); padding: 2px; }
+        #stamina-fill { width: 100%; height: 100%; background-color: white; box-shadow: 0 0 10px white; }
+        #speed-ui { color: white; font-size: 16px; font-weight: 700; letter-spacing: 1px; text-shadow: 0 0 5px white; }
+        #top-right-btns { position: absolute; top: 32px; right: 30px; z-index: 40; display: flex; gap: 20px; align-items: center; }
+        .icon-btn { color: white; font-size: 26px; cursor: pointer; opacity: 0.7; transition: 0.2s; line-height: 1; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 200; justify-content: center; align-items: center; }
+        .modal-content { background: #1a1a1a; border: 1px solid #333; border-radius: 24px; padding: 25px; width: 300px; text-align: center; }
+        .rank-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab-btn { flex: 1; padding: 12px; background: #333; color: #888; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; }
+        .tab-btn.active { background: white; color: black; }
+        .rank-list { text-align: left; margin-bottom: 20px; max-height: 250px; overflow-y: auto; }
+        .rank-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #222; color: white; font-size: 14px; min-height: 20px; }
+        .rank-item.me { color: #4285F4; font-weight: bold; }
+        .modal-btn { width: 100%; padding: 16px; margin: 5px 0; border: none; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; }
+        #dist-ui { position: absolute; top: 85px; width: 100%; text-align: center; color: white; font-size: 52px; font-weight: 900; z-index: 10; }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        .controls { position: absolute; bottom: 100px; width: 100%; display: flex; justify-content: center; gap: 50px; z-index: 20; }
+        .btn { width: 110px; height: 110px; border: 2.5px solid white; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 26px; font-weight: 800; cursor: pointer; background: transparent; color: white; -webkit-tap-highlight-color: transparent; }
+        .btn.next-step { background-color: white; color: black; box-shadow: 0 0 25px white; }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen">
+        <div id="g_id_onload" data-client_id="693073031534-lt66mk27pubqf9ueu4ugi1io2nkqqsil.apps.googleusercontent.com" data-callback="handleCredentialResponse"></div>
+        <div class="g_id_signin" data-type="standard" data-shape="pill" data-theme="filled_blue"></div>
+        <p style="color: white; margin-top: 25px; opacity: 0.5; font-size: 13px;">Master Fixed Edition</p>
+    </div>
+
+    <div id="game-container">
+        <div id="stat-group">
+            <div id="stamina-ui"><div id="stamina-fill"></div></div>
+            <div id="speed-ui">0.0 km/h</div>
+        </div>
+        <div id="top-right-btns"><div id="rank-btn" class="icon-btn">🏆</div><div id="settings-btn" class="icon-btn">⚙️</div></div>
+        <div id="dist-ui">0.0m</div>
+        <canvas id="gameCanvas"></canvas>
+        <div class="controls"><div id="btnL" class="btn next-step">L</div><div id="btnR" class="btn next-step">R</div></div>
+    </div>
+
+    <div id="rank-modal" class="modal"><div class="modal-content"><div style="color:white; margin-bottom:20px; font-weight:900;">WORLD RANKING</div><div class="rank-tabs"><button id="tab-speed" class="tab-btn active">SPEED</button><button id="tab-dist" class="tab-btn">DISTANCE</button></div><div id="rank-list" class="rank-list"></div><button onclick="document.getElementById('rank-modal').style.display='none'" class="modal-btn" style="background:#333; color:white;">닫기</button></div></div>
+    <div id="settings-modal" class="modal"><div class="modal-content"><div style="color:white; margin-bottom:20px; font-weight:900;">SETTINGS</div><div style="color:#888; font-size:12px; text-align:left; margin-bottom:10px;">속도 단위</div><div class="rank-tabs"><button class="unit-btn tab-btn" data-unit="km/h">km/h</button><button class="unit-btn tab-btn" data-unit="mph">mph</button><button class="unit-btn tab-btn" data-unit="m/s">m/s</button></div><button id="reset-btn" class="modal-btn" style="background:#ff4444; color:white; margin-top:20px;">기록 초기화</button><button onclick="document.getElementById('settings-modal').style.display='none'" class="modal-btn" style="background:#333; color:white;">닫기</button></div></div>
+
+    <script>
+        const firebaseConfig = { apiKey: "AIzaSyCAhbjB9yuOXNe75DtMvK20zfCc4wlfzpk", authDomain: "stay-hard-359c4.firebaseapp.com", projectId: "stay-hard-359c4", storageBucket: "stay-hard-359c4.firebasestorage.app", messagingSenderId: "933261867419", appId: "1:933261867419:web:0bbd0b27dbda70e8b4c93e" };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        const canvas = document.getElementById('gameCanvas'), ctx = canvas.getContext('2d');
+        const distLog = document.getElementById('dist-ui'), speedLog = document.getElementById('speed-ui'), staminaFill = document.getElementById('stamina-fill');
+        const btnL = document.getElementById('btnL'), btnR = document.getElementById('btnR'), buffer = document.createElement('canvas'), bctx = buffer.getContext('2d');
+        buffer.width = 400; buffer.height = 500;
+
+        let distance = parseFloat(localStorage.getItem('jogging_total_dist')) || 0, topSpeedEver = parseFloat(localStorage.getItem('jogging_top_speed')) || 0, speedUnit = localStorage.getItem('jogging_speed_unit') || 'km/h', userName = "User", userEmail = "", lastFoot = null, currentT = 0, targetT = 0, stamina = 100, isExhausted = false, exProg = 0, armLift = 0, lastClickTime = 0, isGameReady = false, lastTargetT = 0, displaySpeed = 0, stepCount = 0, rankCache = {speed:null, distance:null};
+        const char = { thick: 24, headR: 24, torso: 65, uLeg: 50, lLeg: 48, uArm: 35, lArm: 32, groundY: 0 };
+        let windLines = []; for(let i=0; i<15; i++) windLines.push({ x: Math.random()*window.innerWidth, y: Math.random()*window.innerHeight, len: 40+Math.random()*100, speed: 10+Math.random()*20 });
+
+        function parseJwt(t) { const bUrl = t.split('.')[1], b64 = bUrl.replace(/-/g, '+').replace(/_/g, '/'), jP = decodeURIComponent(atob(b64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')); return JSON.parse(jP); }
+        function handleCredentialResponse(r) { const p = parseJwt(r.credential); userName = p.name; userEmail = p.email; document.getElementById('login-screen').style.display = 'none'; document.getElementById('game-container').style.display = 'flex'; distLog.innerText = distance.toFixed(1) + "m"; syncGlobalRank(); updateUnitUI(); setTimeout(() => { isGameReady = true; initGame(); }, 200); }
+        async function syncGlobalRank() { if (!userEmail) return; try { await db.collection("rankings").doc(userEmail).set({ name: userName, topSpeed: topSpeedEver, totalDist: distance, lastUpdated: Date.now() }, { merge: true }); } catch(e) {} }
+        async function fetchGlobalRank(type) { const listEl = document.getElementById('rank-list'), field = type === 'speed' ? 'topSpeed' : 'totalDist', unit = type === 'speed' ? 'km/h' : 'm'; if (rankCache[type]) renderRankItems(rankCache[type], type); else listEl.innerHTML = "<p style='color:gray;text-align:center;'>로딩 중...</p>"; try { const snap = await db.collection("rankings").orderBy(field, "desc").limit(10).get(); const data = []; snap.forEach(doc => data.push({id: doc.id, ...doc.data()})); rankCache[type] = data; renderRankItems(data, type); } catch(e) {} }
+        function renderRankItems(data, type) { const listEl = document.getElementById('rank-list'); listEl.innerHTML = ""; data.forEach((d, i) => { const div = document.createElement('div'); div.className = `rank-item ${d.id === userEmail ? 'me' : ''}`; div.innerHTML = `<span>${i+1}. ${d.name}</span> <span>${d[type === 'speed' ? 'topSpeed' : 'totalDist'].toFixed(1)} ${type === 'speed' ? 'km/h' : 'm'}</span>`; listEl.appendChild(div); }); }
+        
+        document.getElementById('rank-btn').onclick = async () => { document.getElementById('rank-modal').style.display = 'flex'; await syncGlobalRank(); fetchGlobalRank('speed'); };
+        document.getElementById('tab-speed').onclick = () => { document.getElementById('tab-speed').classList.add('active'); document.getElementById('tab-dist').classList.remove('active'); fetchGlobalRank('speed'); };
+        document.getElementById('tab-dist').onclick = () => { document.getElementById('tab-dist').classList.add('active'); document.getElementById('tab-speed').classList.remove('active'); fetchGlobalRank('distance'); };
+        document.getElementById('settings-btn').onclick = () => document.getElementById('settings-modal').style.display = 'flex';
+        document.getElementById('reset-btn').onclick = () => { if(confirm("기록을 초기화할까요?")) { distance = 0; topSpeedEver = 0; localStorage.setItem('jogging_total_dist', 0); localStorage.setItem('jogging_top_speed', 0); distLog.innerText = "0.0m"; syncGlobalRank(); document.getElementById('settings-modal').style.display = 'none'; } };
+        document.querySelectorAll('.unit-btn').forEach(btn => btn.onclick = () => { speedUnit = btn.dataset.unit; localStorage.setItem('jogging_speed_unit', speedUnit); updateUnitUI(); });
+        function updateUnitUI() { document.querySelectorAll('.unit-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.unit === speedUnit)); }
+
+        function initGame() { window.addEventListener('resize', resize); resize(); animate(); }
+        function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; char.groundY = canvas.height * 0.72; }
+        function updateButtons() { if (isExhausted) { btnL.classList.remove('next-step'); btnR.classList.remove('next-step'); return; } if (lastFoot === 'L') { btnL.classList.remove('next-step'); btnR.classList.add('next-step'); } else { btnR.classList.remove('next-step'); btnL.classList.add('next-step'); } }
+        function step(side) { if (!isGameReady || isExhausted || document.querySelector('.modal[style*="flex"]')) return; if (lastFoot !== side) { targetT += Math.PI; distance += 0.5; lastFoot = side; distLog.innerText = distance.toFixed(1) + "m"; localStorage.setItem('jogging_total_dist', distance); lastClickTime = Date.now(); stamina -= 7; stepCount++; if (stepCount >= 10) { syncGlobalRank(); stepCount = 0; } if (stamina <= 0) { stamina = 0; isExhausted = true; syncGlobalRank(); } updateButtons(); } }
+
+        window.addEventListener('mousedown', (e) => { if (e.target.closest('.icon-btn') || e.target.closest('.modal') || e.target.closest('.btn')) return; if(e.button===0) step('L'); if(e.button===2) step('R'); });
+        btnL.addEventListener('touchstart', e => { e.preventDefault(); step('L'); }); btnR.addEventListener('touchstart', e => { e.preventDefault(); step('R'); });
+        function drawLine(c, x1, y1, x2, y2) { c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); }
+
+        function getStickmanData(t) {
+            bctx.clearRect(0, 0, buffer.width, buffer.height); bctx.lineWidth = char.thick; bctx.lineCap = "round"; bctx.lineJoin = "round";
+            const bx = buffer.width/2, byHip = buffer.height/2, sinP = Math.sin(t), isMoving = Math.abs(targetT - t) > 0.05, lean = (0.05 * Math.abs(sinP)) + (1.1 * exProg), breath = isExhausted ? Math.sin(Date.now()*0.005)*8 : 0, hY = byHip - (isMoving ? Math.abs(Math.sin(t * 2)) * 8 : 0);
+            const limbs = [];
+            for (let i = 0; i < 2; i++) {
+                const phase = (i === 0) ? t : t + Math.PI, s = Math.sin(phase);
+                let tAng = s * 0.6 * (1 - exProg) + (0.45 * exProg), kAng = (s < 0) ? -Math.abs(s)*1.8*(1-exProg)-(0.9*exProg) : -s*0.4*(1-exProg)-(0.9*exProg);
+                limbs.push({kx:Math.sin(tAng)*char.uLeg, ky:Math.cos(tAng)*char.uLeg, fx:Math.sin(tAng)*char.uLeg+Math.sin(tAng+kAng)*char.lLeg, fy:Math.cos(tAng)*char.uLeg+Math.cos(tAng+kAng)*char.lLeg, isBack:i===1});
+            }
+            const shX = bx + Math.sin(lean)*char.torso, shY = hY - Math.cos(lean)*char.torso;
+            limbs.forEach(l => {
+                const side = l.isBack ? -1 : 1;
+                const sArm = Math.sin(t + (l.isBack ? Math.PI : 0));
+                if (exProg > 0.1) {
+                    const tx = bx + l.kx, ty = hY + l.ky, dx = tx - shX, dy = ty - shY, angleToKnee = Math.atan2(dy, dx);
+                    // [핵심 수정] 무조건 바깥쪽 위로 들리게 하는 각도 절대 고정
+                    const elbowDir = 0.75 * exProg * side;
+                    l.ex = Math.cos(angleToKnee + elbowDir) * char.uArm; l.ey = Math.sin(angleToKnee + elbowDir) * char.uArm; l.hx = tx - shX; l.hy = ty - shY;
+                } else {
+                    const aSw = sArm*0.4*armLift, eB = 1.95*armLift, bA = 0.5*(1-armLift) - (0.8*armLift);
+                    l.ex = Math.sin(aSw+bA)*char.uArm; l.ey = Math.cos(aSw+bA)*char.uArm; l.hx = l.ex+Math.sin(aSw+bA+eB)*char.lArm; l.hy = l.ey+Math.cos(aSw+bA+eB)*char.lArm;
+                }
+            });
+            const dL = (l, color) => { bctx.strokeStyle = color; bctx.fillStyle = color; drawLine(bctx, bx, hY, bx+l.kx, hY+l.ky); drawLine(bctx, bx+l.kx, hY+l.ky, bx+l.fx, hY+l.fy); drawLine(bctx, shX, shY, shX+l.ex, shY+l.ey); drawLine(bctx, shX+l.ex, shY+l.ey, shX+l.hx, shY+l.hy); };
+            dL(limbs.find(l=>l.isBack), "#eee"); bctx.strokeStyle = "white"; bctx.fillStyle = "white"; drawLine(bctx, bx, hY, shX, shY); bctx.beginPath(); bctx.arc(shX+(Math.sin(lean)*15), shY-30+(exProg*15), char.headR, 0, Math.PI*2); bctx.fill(); dL(limbs.find(l=>!l.isBack), "white");
+            return hY + Math.max(limbs[0].fy, limbs[1].fy) + breath;
+        }
+
+        function animate() {
+            ctx.fillStyle = "black"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            const now = Date.now(), dt = now - lastClickTime;
+            currentT += (targetT - currentT) * 0.12;
+            if (isExhausted) { stamina += 0.15; exProg += (1 - exProg) * 0.1; if (stamina >= 35) { isExhausted = false; syncGlobalRank(); updateButtons(); } }
+            else { exProg += (0 - exProg) * 0.1; if (dt > 200) stamina += 1.2; }
+            stamina = Math.min(100, stamina); staminaFill.style.width = stamina + "%";
+            const rawS = (targetT - lastTargetT) * 5; displaySpeed += (rawS - displaySpeed) * 0.05; lastTargetT += (targetT - lastTargetT) * 0.1;
+            let rK = (displaySpeed * 0.7 < 0.1 ? 0 : displaySpeed * 0.7);
+            if (speedUnit === 'km/h') speedLog.innerText = rK.toFixed(1) + " km/h";
+            else if (speedUnit === 'mph') speedLog.innerText = (rK * 0.621).toFixed(1) + " mph";
+            else speedLog.innerText = (rK / 3.6).toFixed(1) + " m/s";
+            if (rK > topSpeedEver) { topSpeedEver = rK; localStorage.setItem('jogging_top_speed', topSpeedEver); }
+            if (rK > 15) {
+                ctx.strokeStyle = `rgba(255,255,255,${Math.min((rK-15)/10, 0.4)})`; ctx.lineWidth = 1;
+                windLines.forEach(l => { l.x -= l.speed * (rK/10); if (l.x + l.len < 0) { l.x = canvas.width; l.y = Math.random()*canvas.height; } ctx.beginPath(); ctx.moveTo(l.x, l.y); ctx.lineTo(l.x+l.len, l.y); ctx.stroke(); });
+            }
+            const lowPos = getStickmanData(currentT), dX = canvas.width/2 - buffer.width/2, dY = char.groundY - lowPos;
+            ctx.save(); ctx.translate(0, char.groundY * 2); ctx.scale(1, -1); ctx.globalAlpha = 0.25; ctx.filter = "blur(3px)"; ctx.drawImage(buffer, dX, char.groundY - lowPos); ctx.restore();
+            ctx.strokeStyle = "rgba(255,255,255,0.06)"; ctx.lineWidth = 1; for(let i=0; i<4; i++) drawLine(ctx, 0, char.groundY+2+(i*6), canvas.width, char.groundY+2+(i*6));
+            ctx.strokeStyle = "#444"; ctx.lineWidth = 2; drawLine(ctx, 0, char.groundY+1, canvas.width, char.groundY+1);
+            ctx.filter = "none"; ctx.globalAlpha = 1; ctx.drawImage(buffer, dX, dY);
+            requestAnimationFrame(animate);
+        }
+    </script>
+</body>
+</html>
